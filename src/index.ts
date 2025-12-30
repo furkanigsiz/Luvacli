@@ -684,7 +684,7 @@ ${c.bold}Docs${c.reset} ${c.magenta}(NEW!)${c.reset}
       }
 
       // Spec commands
-      if (msg === "/spec list" || msg === "/specs") {
+      if (msg === "/spec list" || msg === "/specs" || msg === "spec list" || msg === "specs") {
         console.log(formatSpecsList(listSpecs(process.cwd())));
         ask(); return;
       }
@@ -777,13 +777,13 @@ Sadece JSON döndür, başka bir şey yazma.`;
         activeSpec = spec;
         ask(); return;
       }
-      if (msg === "/spec show") {
+      if (msg === "/spec show" || msg === "spec show") {
         const spec = activeSpec || getActiveSpec(process.cwd());
         if (!spec) { console.log("❌ Aktif spec yok. /spec new ile oluştur."); ask(); return; }
         console.log(formatSpec(spec));
         ask(); return;
       }
-      if (msg === "/spec requirements" || msg === "/spec req") {
+      if (msg === "/spec requirements" || msg === "/spec req" || msg === "spec req" || msg === "spec requirements") {
         if (!activeSpec) { console.log("❌ Önce /spec new ile spec oluştur."); ask(); return; }
         console.log("📋 Requirements oluşturuluyor...");
         const contextInfo = codebaseIndex ? buildContextString(selectRelevantFiles(process.cwd(), activeSpec.title)) : "";
@@ -794,7 +794,7 @@ Sadece JSON döndür, başka bir şey yazma.`;
         } catch (e: any) { console.error(`❌ Hata: ${e.message}`); }
         ask(); return;
       }
-      if (msg === "/spec design") {
+      if (msg === "/spec design" || msg === "spec design") {
         if (!activeSpec || activeSpec.requirements.length === 0) { 
           console.log("❌ Önce requirements oluştur: /spec requirements"); ask(); return; 
         }
@@ -807,7 +807,7 @@ Sadece JSON döndür, başka bir şey yazma.`;
         } catch (e: any) { console.error(`❌ Hata: ${e.message}`); }
         ask(); return;
       }
-      if (msg === "/spec tasks") {
+      if (msg === "/spec tasks" || msg === "spec tasks") {
         if (!activeSpec || activeSpec.design.length === 0) { 
           console.log("❌ Önce design oluştur: /spec design"); ask(); return; 
         }
@@ -820,7 +820,7 @@ Sadece JSON döndür, başka bir şey yazma.`;
         } catch (e: any) { console.error(`❌ Hata: ${e.message}`); }
         ask(); return;
       }
-      if (msg === "/spec next" || msg === "/spec implement") {
+      if (msg === "/spec next" || msg === "/spec implement" || msg === "spec next" || msg === "spec implement") {
         if (!activeSpec || activeSpec.tasks.length === 0) { 
           console.log("❌ Önce tasks oluştur: /spec tasks"); ask(); return; 
         }
@@ -868,7 +868,7 @@ Sadece JSON döndür, başka bir şey yazma.`;
       }
       
       // /spec auto - Tüm spec'i otomatik uygula (Agent Mode)
-      if (msg === "/spec auto" || msg === "/spec agent") {
+      if (msg === "/spec auto" || msg === "/spec agent" || msg === "spec auto" || msg === "spec agent") {
         if (!activeSpec) { console.log("❌ Aktif spec yok. /spec new ile oluştur."); ask(); return; }
         if (activeSpec.tasks.length === 0) { console.log("❌ Önce tasks oluştur: /spec tasks"); ask(); return; }
         const pendingTasks = activeSpec.tasks.filter(t => t.status === "pending");
