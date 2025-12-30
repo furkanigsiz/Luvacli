@@ -133,7 +133,8 @@ export function createSpec(cwd: string, title: string, description: string): Spe
   const refs = parseFileReferences(description, cwd);
   const referencePaths = refs.map(r => r.path);
   
-  const id = `spec_${Date.now()}`;
+  // Generate Kiro-style slug ID from title
+  const id = generateSpecId(title, cwd);
   const spec: Spec = {
     id,
     title,
@@ -151,6 +152,46 @@ export function createSpec(cwd: string, title: string, description: string): Spe
   saveSpecMarkdown(cwd, spec);
   
   return spec;
+}
+
+/**
+ * Generate Kiro-style spec ID from title
+ * "User Authentication System" -> "user-authentication-system"
+ * "İyzico Ödeme Entegrasyonu" -> "iyzico-odeme-entegrasyonu"
+ */
+function generateSpecId(title: string, cwd: string): string {
+  // Turkish character mapping
+  const trMap: Record<string, string> = {
+    'ç': 'c', 'Ç': 'c',
+    'ğ': 'g', 'Ğ': 'g',
+    'ı': 'i', 'İ': 'i',
+    'ö': 'o', 'Ö': 'o',
+    'ş': 's', 'Ş': 's',
+    'ü': 'u', 'Ü': 'u'
+  };
+  
+  let slug = title
+    .toLowerCase()
+    .split('')
+    .map(char => trMap[char] || char)
+    .join('')
+    .replace(/[^a-z0-9\s-]/g, '') // Remove special chars
+    .replace(/\s+/g, '-')          // Spaces to hyphens
+    .replace(/-+/g, '-')           // Multiple hyphens to single
+    .replace(/^-|-$/g, '')         // Trim hyphens
+    .slice(0, 50);                 // Max 50 chars
+  
+  // Ensure unique - check if exists and add number if needed
+  const specDir = path.join(cwd, SPEC_DIR);
+  let finalId = slug;
+  let counter = 1;
+  
+  while (fs.existsSync(path.join(specDir, `${finalId}.json`))) {
+    finalId = `${slug}-${counter}`;
+    counter++;
+  }
+  
+  return finalId;
 }
 
 // Save spec as JSON
