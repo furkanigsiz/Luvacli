@@ -44,6 +44,7 @@ import {
 } from "./test-gen.js";
 import { runAgentMode, runAgentFromSpec } from "./agent.js";
 import { getBasePrompt } from "./prompts.js";
+import { sendMessageWithRetry, generateContentWithRetry } from "./retry.js";
 import { 
   scanDocsFolder, findRelevantDocs, buildDocsContext, 
   getDocsStatus, createDocTemplate, parseDocsMention 
@@ -1134,7 +1135,7 @@ async function chat(model: any, history: Content[], userMsg: string, originalMsg
   }
   
   // Use non-streaming for Gemini 3 to avoid thought_signature issues
-  const response = await chatSession.sendMessage(messageParts);
+  const response = await sendMessageWithRetry(chatSession, messageParts, "chat");
   const text = response.response.text();
   process.stdout.write(formatAIOutput(text));
 
@@ -1191,7 +1192,7 @@ async function chat(model: any, history: Content[], userMsg: string, originalMsg
     
     // Continue with function results
     process.stdout.write("\n\x1b[36m◆\x1b[0m ");
-    const nextResponse = await chatSession.sendMessage(responseParts);
+    const nextResponse = await sendMessageWithRetry(chatSession, responseParts, "tool response");
     const nextText = nextResponse.response.text();
     process.stdout.write(formatAIOutput(nextText));
     
@@ -1259,7 +1260,7 @@ async function handleFunctionCalls(chatSession: any, history: Content[], fcs: an
 
   process.stdout.write("\n\x1b[36m◆\x1b[0m ");
   
-  const response = await chatSession.sendMessage(responseParts);
+  const response = await sendMessageWithRetry(chatSession, responseParts, "tool response");
   const text = response.response.text();
   process.stdout.write(formatAIOutput(text));
 
@@ -1292,7 +1293,7 @@ Hataları düzeltmek için gerekli dosyaları edit_file veya write_file ile gün
       history.push({ role: "user", parts: [{ text: fixPrompt }] });
       process.stdout.write("\n\x1b[36m◆\x1b[0m ");
       
-      const fixResponse = await chatSession.sendMessage(fixPrompt);
+      const fixResponse = await sendMessageWithRetry(chatSession, fixPrompt, "fix errors");
       const fixText = fixResponse.response.text();
       process.stdout.write(formatAIOutput(fixText));
       
@@ -1349,7 +1350,7 @@ main().catch(console.error);
 // Generate spec phase (requirements, design, tasks)
 async function generateSpecPhase(model: any, spec: Spec, prompt: string, phase: "requirements" | "design" | "tasks") {
   const chatSession = model.startChat({ history: [] });
-  const result = await chatSession.sendMessage(prompt);
+  const result = await sendMessageWithRetry(chatSession, prompt, `spec ${phase}`);
   const text = result.response.text();
   
   // Extract JSON from response

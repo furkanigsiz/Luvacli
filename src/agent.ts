@@ -14,6 +14,7 @@ import { Content } from "@google/generative-ai";
 import { executeTool, executeToolsParallel } from "./tools.js";
 import { getDiagnostics, formatDiagnostics } from "./diagnostics.js";
 import { getAgentPlanPrompt, getAgentStepPrompt, getFixErrorsPrompt } from "./prompts.js";
+import { sendMessageWithRetry } from "./retry.js";
 
 export interface AgentStep {
   id: number;
@@ -179,7 +180,7 @@ async function createPlan(
   const prompt = getAgentPlanPrompt(goal, codebaseContext);
 
   const chatSession = model.startChat({ history: [] });
-  const result = await chatSession.sendMessage(prompt);
+  const result = await sendMessageWithRetry(chatSession, prompt, "agent plan");
   const text = result.response.text();
   
   const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -214,7 +215,7 @@ async function executeStep(
   const chatSession = model.startChat({ history: [] });
   
   // Send message and handle function calls
-  let response = await chatSession.sendMessage(prompt);
+  let response = await sendMessageWithRetry(chatSession, prompt, "agent step");
   let iterations = 0;
   const maxIterations = 10;
   
@@ -245,7 +246,7 @@ async function executeStep(
     }
     
     // Continue conversation
-    response = await chatSession.sendMessage(responseParts);
+    response = await sendMessageWithRetry(chatSession, responseParts, "agent continue");
     iterations++;
   }
   
@@ -333,7 +334,7 @@ async function checkAndFix(
       const fixPrompt = getFixErrorsPrompt(output, codebaseContext);
 
       const chatSession = model.startChat({ history: [] });
-      let response = await chatSession.sendMessage(fixPrompt);
+      let response = await sendMessageWithRetry(chatSession, fixPrompt, "agent fix");
       
       // Handle function calls for fixing
       let iterations = 0;
@@ -350,7 +351,7 @@ async function checkAndFix(
           });
         }
         
-        response = await chatSession.sendMessage(responseParts);
+        response = await sendMessageWithRetry(chatSession, responseParts, "agent fix continue");
         iterations++;
       }
       
