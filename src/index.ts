@@ -399,6 +399,7 @@ ${c.bold}Geliştirme${c.reset}
   ${c.yellow}/test gen <f>${c.reset}     Test dosyası oluştur
 
 ${c.bold}Spec (Kiro-style)${c.reset}
+  ${c.yellow}spec oluştur${c.reset}      Konuşmadan otomatik spec ${c.magenta}(NEW!)${c.reset}
   ${c.yellow}/spec new <t>${c.reset}     Yeni spec başlat
   ${c.yellow}/spec req${c.reset}         Requirements oluştur
   ${c.yellow}/spec design${c.reset}      Design oluştur
@@ -687,6 +688,74 @@ ${c.bold}Docs${c.reset} ${c.magenta}(NEW!)${c.reset}
         console.log(formatSpecsList(listSpecs(process.cwd())));
         ask(); return;
       }
+      
+      // Natural language spec creation: "bunun için spec oluştur", "spec yap", etc.
+      const specCreatePatterns = [
+        /^(bunun için |bununla ilgili |bu konuda )?(spec|spek) (oluştur|yap|hazırla|başlat)/i,
+        /^(spec|spek) (oluştur|yap|hazırla)/i,
+        /^(create|make|start) spec/i
+      ];
+      const isSpecCreateRequest = specCreatePatterns.some(p => p.test(msg));
+      
+      if (isSpecCreateRequest && history.length >= 2) {
+        console.log("📋 Önceki konuşmadan spec oluşturuluyor...");
+        
+        // Get last few messages for context
+        const recentHistory = history.slice(-10);
+        const conversationSummary = recentHistory
+          .filter(h => h.parts?.some((p: any) => p.text))
+          .map(h => {
+            const textPart = h.parts?.find((p: any) => p.text) as any;
+            return `${h.role === "user" ? "Kullanıcı" : "AI"}: ${textPart?.text?.slice(0, 500) || ""}`;
+          })
+          .join("\n");
+        
+        // Ask AI to extract spec title and description from conversation
+        const extractPrompt = `Aşağıdaki konuşmadan bir proje spec'i oluşturmam gerekiyor.
+
+KONUŞMA:
+${conversationSummary}
+
+Bu konuşmadan:
+1. Projenin kısa bir başlığı (max 50 karakter)
+2. Projenin detaylı açıklaması (ne yapılacak, özellikler, gereksinimler)
+
+JSON formatında döndür:
+{
+  "title": "Proje Başlığı",
+  "description": "Detaylı açıklama..."
+}
+
+Sadece JSON döndür.`;
+
+        try {
+          const extractSession = model.startChat({ history: [] });
+          const extractResult = await extractSession.sendMessage(extractPrompt);
+          const extractText = extractResult.response.text();
+          
+          const jsonMatch = extractText.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            const { title, description } = JSON.parse(jsonMatch[0]);
+            const spec = createSpec(process.cwd(), title, description);
+            activeSpec = spec;
+            
+            console.log(`\n✅ Spec oluşturuldu: ${spec.title}`);
+            console.log(`📁 .luva/specs/${spec.id}.md`);
+            console.log(`\n📝 Açıklama: ${description.slice(0, 200)}...`);
+            console.log(`\n💡 Sonraki adımlar:`);
+            console.log(`   /spec req     - Requirements oluştur`);
+            console.log(`   /spec design  - Design oluştur`);
+            console.log(`   /spec tasks   - Tasks oluştur`);
+            console.log(`   /spec auto    - Tümünü otomatik uygula`);
+          } else {
+            console.log("❌ Spec bilgisi çıkarılamadı. Lütfen /spec new <başlık> kullan.");
+          }
+        } catch (e: any) {
+          console.log(`❌ Hata: ${e.message}`);
+        }
+        ask(); return;
+      }
+      
       if (msg.startsWith("/spec new ")) {
         const title = msg.slice(10).trim();
         if (!title) { console.log("❌ Başlık gerekli: /spec new <başlık>"); ask(); return; }
