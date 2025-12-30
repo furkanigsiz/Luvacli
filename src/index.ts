@@ -44,6 +44,10 @@ import {
 } from "./test-gen.js";
 import { runAgentMode, runAgentFromSpec } from "./agent.js";
 import { getBasePrompt } from "./prompts.js";
+import { 
+  scanDocsFolder, findRelevantDocs, buildDocsContext, 
+  getDocsStatus, createDocTemplate, parseDocsMention 
+} from "./docs.js";
 
 // Helper: Truncate tool output for terminal display
 function truncateToolOutput(toolName: string, result: string, maxLines = 10): string {
@@ -412,6 +416,11 @@ ${c.bold}MCP${c.reset}
   ${c.yellow}mcp${c.reset}               Server listesi
   ${c.yellow}mcp popular${c.reset}       Popüler server'lar
   ${c.yellow}mcp install <n>${c.reset}   Server kur
+
+${c.bold}Docs${c.reset} ${c.magenta}(NEW!)${c.reset}
+  ${c.yellow}docs${c.reset}              Döküman listesi
+  ${c.yellow}docs new <name>${c.reset}   Yeni döküman şablonu
+  ${c.yellow}@docs:iyzico${c.reset}      Döküman ile soru sor
 `);
         ask(); return;
       }
@@ -547,6 +556,22 @@ ${c.bold}MCP${c.reset}
             execSync(cmd, { cwd: process.cwd(), stdio: "inherit" });
           } catch {}
         }
+        ask(); return;
+      }
+
+      // Docs Commands
+      if (msg === "docs" || msg === "docs list") { 
+        console.log("\n" + getDocsStatus(process.cwd())); 
+        ask(); return; 
+      }
+      if (msg.startsWith("docs new ")) {
+        const serviceName = msg.slice(9).trim();
+        if (!serviceName) { console.log("Kullanım: docs new <servis-adı>"); ask(); return; }
+        try {
+          const filePath = createDocTemplate(process.cwd(), serviceName);
+          console.log(`✅ Döküman şablonu oluşturuldu: ${filePath}`);
+          console.log(`📝 Şimdi bu dosyayı düzenleyerek API dökümanını ekle.`);
+        } catch (e: any) { console.log(`❌ ${e.message}`); }
         ask(); return;
       }
 
@@ -851,8 +876,19 @@ ${c.bold}Örnekler${c.reset}
         console.log(`\n🤖 Agent Mode başlatılıyor...`);
         const contextInfo = codebaseIndex ? buildContextString(selectRelevantFiles(process.cwd(), goal)) : "";
         
-        // Combine codebase context with skill context
-        const fullContext = skillContext ? `${skillContext}\n\n${contextInfo}` : contextInfo;
+        // Check for relevant docs
+        const agentDocs = scanDocsFolder(process.cwd());
+        let agentDocsContext = "";
+        if (agentDocs.length > 0) {
+          const matchedDocs = findRelevantDocs(goal, agentDocs, 3);
+          if (matchedDocs.length > 0 && matchedDocs[0].score >= 20) {
+            console.log(`📚 İlgili döküman: ${matchedDocs.map(m => m.doc.name).join(", ")}`);
+            agentDocsContext = buildDocsContext(matchedDocs);
+          }
+        }
+        
+        // Combine codebase context with skill context and docs
+        const fullContext = [skillContext, agentDocsContext, contextInfo].filter(Boolean).join("\n\n");
         
         try {
           await runAgentMode(model, goal, fullContext);
@@ -877,8 +913,31 @@ ${c.bold}Örnekler${c.reset}
         console.log(`\n📎 ${formatMentions(mentions)}`);
       }
 
+      // Parse @docs mention and auto-detect docs from query
+      const { cleanMessage: msgWithoutDocs, docQuery } = parseDocsMention(cleanMessage);
+      let docsContext = "";
+      const allDocs = scanDocsFolder(process.cwd());
+      
+      if (docQuery) {
+        // Explicit @docs:servicename mention
+        const matchedDocs = findRelevantDocs(docQuery, allDocs, 2);
+        if (matchedDocs.length > 0) {
+          console.log(`\n📚 Döküman bulundu: ${matchedDocs.map(m => m.doc.name).join(", ")}`);
+          docsContext = buildDocsContext(matchedDocs);
+        } else {
+          console.log(`\n⚠️ "${docQuery}" için döküman bulunamadı. docs/ klasörüne ekle.`);
+        }
+      } else if (allDocs.length > 0) {
+        // Auto-detect: check if query mentions any known service/API
+        const matchedDocs = findRelevantDocs(msgWithoutDocs, allDocs, 2);
+        if (matchedDocs.length > 0 && matchedDocs[0].score >= 30) {
+          console.log(`\n📚 İlgili döküman: ${matchedDocs.map(m => m.doc.name).join(", ")}`);
+          docsContext = buildDocsContext(matchedDocs);
+        }
+      }
+
       // Parse image references
-      const { cleanMessage: finalMessage, images } = parseImageReferences(cleanMessage, process.cwd());
+      const { cleanMessage: finalMessage, images } = parseImageReferences(msgWithoutDocs, process.cwd());
       if (images.length > 0) {
         console.log(`${formatImageInfo(images)}`);
       }
@@ -930,7 +989,7 @@ ${c.bold}Örnekler${c.reset}
 
       // Process message with context
       try {
-        const enrichedMsg = `${finalMessage}${mentionContext}${contextInfo}`;
+        const enrichedMsg = `${finalMessage}${mentionContext}${docsContext}${contextInfo}`;
         await chat(model, history, enrichedMsg, msg, images, activeSteeringNames);
         saveHistory(history);
       } catch (e: any) {

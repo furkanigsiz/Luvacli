@@ -4,8 +4,9 @@
  * Bu dosyayı düzenleyerek AI davranışını değiştirebilirsin.
  */
 
-export function getBasePrompt(cwd: string): string {
+export function getBasePrompt(cwd: string, docsContext?: string): string {
   return `Sen Luva adında bir AGENTIC AI asistansın.
+${docsContext ? `\n${docsContext}\n` : ""}
 
 ## Temel Kurallar
 - Türkçe konuş (İngilizce sorulursa İngilizce cevap ver)
@@ -80,12 +81,13 @@ Kod yazdığında MUTLAKA write_file ile kaydet!
 ÇALIŞMA DİZİNİ: ${cwd}`;
 }
 
-export function getAgentPlanPrompt(goal: string, codebaseContext: string): string {
+export function getAgentPlanPrompt(goal: string, codebaseContext: string, docsContext?: string): string {
   return `Sen bir autonomous coding agent'sın. Verilen görevi ADIM ADIM planlayacaksın.
 
 GÖREV: ${goal}
 
 ${codebaseContext}
+${docsContext ? `\n${docsContext}\n` : ""}
 
 Bu görevi tamamlamak için gereken SOMUT adımları listele. Her adım:
 - Tek bir işlem olmalı (dosya oluştur, düzenle, komut çalıştır)
@@ -127,7 +129,8 @@ export function getAgentStepPrompt(
   goal: string, 
   stepDescription: string, 
   previousSteps: string,
-  codebaseContext: string
+  codebaseContext: string,
+  docsContext?: string
 ): string {
   return `GÖREV: ${goal}
 
@@ -137,6 +140,7 @@ ${previousSteps || "(henüz yok)"}
 ŞİMDİKİ ADIM: ${stepDescription}
 
 ${codebaseContext}
+${docsContext ? `\n${docsContext}\n` : ""}
 
 Bu adımı HEMEN uygula. Gerekli tool'ları kullan:
 - write_file: Dosya oluştur/yaz
