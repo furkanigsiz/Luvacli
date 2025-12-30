@@ -88,7 +88,7 @@ export function optimizeHistory(
   
   // If within budget, return as-is
   if (totalTokens <= maxTokens) {
-    return history;
+    return ensureStartsWithUser(history);
   }
   
   console.log(`\x1b[33m⚠️ History çok büyük (${Math.round(totalTokens/1000)}K token), optimize ediliyor...\x1b[0m`);
@@ -129,9 +129,39 @@ export function optimizeHistory(
     }
   }
   
-  console.log(`\x1b[32m✅ History: ${history.length} → ${optimized.length} mesaj (${Math.round(usedTokens/1000)}K token)\x1b[0m`);
+  // CRITICAL: Ensure history starts with 'user' role
+  const finalHistory = ensureStartsWithUser(optimized);
   
-  return optimized;
+  const finalTokens = finalHistory.reduce((sum, msg) => {
+    return sum + estimateTokens(getTextFromParts(msg.parts || []));
+  }, 0);
+  
+  console.log(`\x1b[32m✅ History: ${history.length} → ${finalHistory.length} mesaj (${Math.round(finalTokens/1000)}K token)\x1b[0m`);
+  
+  return finalHistory;
+}
+
+/**
+ * Ensure history starts with 'user' role (Gemini requirement)
+ */
+function ensureStartsWithUser(history: Content[]): Content[] {
+  if (history.length === 0) return history;
+  
+  // Find first 'user' message
+  const firstUserIndex = history.findIndex(msg => msg.role === "user");
+  
+  if (firstUserIndex === -1) {
+    // No user message found - return empty (shouldn't happen)
+    return [];
+  }
+  
+  if (firstUserIndex === 0) {
+    // Already starts with user
+    return history;
+  }
+  
+  // Skip leading 'model' messages
+  return history.slice(firstUserIndex);
 }
 
 /**
