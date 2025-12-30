@@ -2,7 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 
 /**
- * Kiro-style file references: #[[file:path/to/file]]
+ *  file references: #[[file:path/to/file]]
  * Spec içinde dış dosyalara referans verme
  */
 export interface FileReference {
@@ -112,7 +112,7 @@ export interface Spec {
   requirements: Requirement[];
   design: DesignDecision[];
   tasks: Task[];
-  references?: string[];  // Kiro-style: #[[file:openapi.yaml]] paths
+  references?: string[];  //  #[[file:openapi.yaml]] paths
 }
 
 const SPEC_DIR = ".luva/specs";
@@ -198,14 +198,206 @@ function generateSpecId(title: string, cwd: string): string {
 export function saveSpec(cwd: string, spec: Spec): void {
   initSpecDir(cwd);
   spec.updatedAt = new Date().toISOString();
-  const filePath = path.join(cwd, SPEC_DIR, `${spec.id}.json`);
+  
+  // Create spec folder: .luva/specs/spec-name/
+  const specFolder = path.join(cwd, SPEC_DIR, spec.id);
+  if (!fs.existsSync(specFolder)) {
+    fs.mkdirSync(specFolder, { recursive: true });
+  }
+  
+  // Save main spec JSON
+  const filePath = path.join(specFolder, "spec.json");
   fs.writeFileSync(filePath, JSON.stringify(spec, null, 2));
+  
+  // Also save backward-compatible root JSON
+  const rootJsonPath = path.join(cwd, SPEC_DIR, `${spec.id}.json`);
+  fs.writeFileSync(rootJsonPath, JSON.stringify(spec, null, 2));
 }
 
-// Save spec as Markdown (human-readable)
+// Save spec as Markdown (human-readable) - Kiro style separate files
 export function saveSpecMarkdown(cwd: string, spec: Spec): void {
   initSpecDir(cwd);
   
+  // Create spec folder
+  const specFolder = path.join(cwd, SPEC_DIR, spec.id);
+  if (!fs.existsSync(specFolder)) {
+    fs.mkdirSync(specFolder, { recursive: true });
+  }
+  
+  // 1. Save main README.md
+  let readme = `# ${spec.title}\n\n`;
+  readme += `${spec.description}\n\n`;
+  readme += `---\n\n`;
+  readme += `## Status: ${spec.status.toUpperCase()}\n\n`;
+  readme += `| Phase | Status |\n`;
+  readme += `|-------|--------|\n`;
+  readme += `| Requirements | ${spec.requirements.length > 0 ? '✅ Done' : '⏳ Pending'} |\n`;
+  readme += `| Design | ${spec.design.length > 0 ? '✅ Done' : '⏳ Pending'} |\n`;
+  readme += `| Tasks | ${spec.tasks.length > 0 ? `${spec.tasks.filter(t => t.status === 'done').length}/${spec.tasks.length}` : '⏳ Pending'} |\n\n`;
+  readme += `## Files\n\n`;
+  readme += `- [requirements.md](./requirements.md) - Functional & non-functional requirements\n`;
+  readme += `- [design.md](./design.md) - Technical design decisions\n`;
+  readme += `- [tasks.md](./tasks.md) - Implementation tasks\n\n`;
+  readme += `---\n`;
+  readme += `Created: ${spec.createdAt}\n`;
+  readme += `Updated: ${spec.updatedAt}\n`;
+  
+  fs.writeFileSync(path.join(specFolder, "README.md"), readme);
+  
+  // 2. Save requirements.md (Kiro style)
+  saveRequirementsMarkdown(specFolder, spec);
+  
+  // 3. Save design.md (Kiro style)
+  saveDesignMarkdown(specFolder, spec);
+  
+  // 4. Save tasks.md (Kiro style)
+  saveTasksMarkdown(specFolder, spec);
+  
+  // Also save backward-compatible single MD file
+  const singleMd = generateSingleMarkdown(spec);
+  fs.writeFileSync(path.join(cwd, SPEC_DIR, `${spec.id}.md`), singleMd);
+}
+
+// Kiro-style requirements.md
+function saveRequirementsMarkdown(specFolder: string, spec: Spec): void {
+  let md = `# Requirements: ${spec.title}\n\n`;
+  
+  if (spec.requirements.length === 0) {
+    md += `> No requirements defined yet. Run \`spec req\` to generate.\n`;
+  } else {
+    // Group by category
+    const categories = [...new Set(spec.requirements.map(r => r.category || "general"))];
+    
+    for (const cat of categories) {
+      const catReqs = spec.requirements.filter(r => (r.category || "general") === cat);
+      md += `## ${formatCategoryName(cat)}\n\n`;
+      
+      for (const req of catReqs) {
+        const priorityBadge = req.priority ? `\`${req.priority}\`` : '';
+        md += `### ${req.id}: ${req.description} ${priorityBadge}\n\n`;
+        md += `**Acceptance Criteria:**\n\n`;
+        for (const ac of req.acceptance) {
+          md += `- [ ] ${ac}\n`;
+        }
+        md += `\n---\n\n`;
+      }
+    }
+  }
+  
+  fs.writeFileSync(path.join(specFolder, "requirements.md"), md);
+}
+
+// Kiro-style design.md
+function saveDesignMarkdown(specFolder: string, spec: Spec): void {
+  let md = `# Design: ${spec.title}\n\n`;
+  
+  if (spec.design.length === 0) {
+    md += `> No design decisions yet. Run \`spec design\` to generate.\n`;
+  } else {
+    // Group by category
+    const categories = [...new Set(spec.design.map(d => d.category || "general"))];
+    
+    for (const cat of categories) {
+      const catDesign = spec.design.filter(d => (d.category || "general") === cat);
+      md += `## ${formatCategoryName(cat)}\n\n`;
+      
+      for (const d of catDesign) {
+        md += `### ${d.id}: ${d.component}\n\n`;
+        md += `${d.description}\n\n`;
+        md += `**Rationale:**\n${d.rationale}\n\n`;
+        if (d.alternatives) {
+          md += `**Alternatives Considered:**\n${d.alternatives}\n\n`;
+        }
+        md += `---\n\n`;
+      }
+    }
+  }
+  
+  fs.writeFileSync(path.join(specFolder, "design.md"), md);
+}
+
+
+function saveTasksMarkdown(specFolder: string, spec: Spec): void {
+  let md = `# Tasks: ${spec.title}\n\n`;
+  
+  if (spec.tasks.length === 0) {
+    md += `> No tasks defined yet. Run \`spec tasks\` to generate.\n`;
+  } else {
+    const done = spec.tasks.filter(t => t.status === "done").length;
+    const inProgress = spec.tasks.filter(t => t.status === "in-progress").length;
+    const pending = spec.tasks.filter(t => t.status === "pending").length;
+    
+    md += `## Progress\n\n`;
+    md += `| Status | Count |\n`;
+    md += `|--------|-------|\n`;
+    md += `| ✅ Done | ${done} |\n`;
+    md += `| 🔄 In Progress | ${inProgress} |\n`;
+    md += `| ⏳ Pending | ${pending} |\n`;
+    md += `| **Total** | **${spec.tasks.length}** |\n\n`;
+    md += `---\n\n`;
+    
+    // Group by category
+    const categories = [...new Set(spec.tasks.map(t => t.category || "general"))];
+    
+    for (const cat of categories) {
+      const catTasks = spec.tasks.filter(t => (t.category || "general") === cat);
+      md += `## ${formatCategoryName(cat)}\n\n`;
+      
+      for (const task of catTasks) {
+        const statusIcon = task.status === "done" ? "✅" : 
+                          task.status === "in-progress" ? "🔄" : 
+                          task.status === "skipped" ? "⏭️" : "⏳";
+        const checkbox = task.status === "done" ? "[x]" : "[ ]";
+        const sizeBadge = task.size ? `\`${task.size}\`` : '';
+        
+        md += `### ${checkbox} ${task.id}: ${task.title} ${statusIcon} ${sizeBadge}\n\n`;
+        md += `${task.description}\n\n`;
+        
+        if (task.file) {
+          md += `**Files:** \`${task.file}\`\n\n`;
+        }
+        if (task.requirementIds && task.requirementIds.length > 0) {
+          md += `**Requirements:** ${task.requirementIds.join(", ")}\n\n`;
+        }
+        if (task.dependsOn && task.dependsOn.length > 0) {
+          md += `**Depends on:** ${task.dependsOn.join(", ")}\n\n`;
+        }
+        md += `---\n\n`;
+      }
+    }
+  }
+  
+  fs.writeFileSync(path.join(specFolder, "tasks.md"), md);
+}
+
+// Helper: Format category name
+function formatCategoryName(cat: string): string {
+  const names: Record<string, string> = {
+    general: "General",
+    auth: "🔐 Authentication & Authorization",
+    security: "🛡️ Security",
+    ux: "🎨 User Experience",
+    performance: "⚡ Performance",
+    data: "💾 Data Management",
+    integration: "🔗 Integrations",
+    admin: "👤 Admin Panel",
+    deployment: "🚀 Deployment & Operations",
+    setup: "⚙️ Setup & Configuration",
+    database: "🗄️ Database",
+    api: "🌐 API Layer",
+    ui: "🎨 UI Components",
+    pages: "📄 Pages & Views",
+    testing: "🧪 Testing",
+    polish: "✨ Polish & Optimization",
+    architecture: "🏗️ Architecture",
+    frontend: "💻 Frontend",
+    backend: "⚙️ Backend"
+  };
+  return names[cat.toLowerCase()] || cat.charAt(0).toUpperCase() + cat.slice(1);
+}
+
+// Generate single markdown (backward compatible)
+function generateSingleMarkdown(spec: Spec): string {
   let md = `# ${spec.title}\n\n`;
   md += `> ${spec.description}\n\n`;
   md += `**Status:** ${spec.status} | **Updated:** ${spec.updatedAt}\n\n`;
@@ -216,11 +408,10 @@ export function saveSpecMarkdown(cwd: string, spec: Spec): void {
   if (spec.requirements.length === 0) {
     md += `_No requirements defined yet_\n\n`;
   } else {
-    // Group by category
     const categories = [...new Set(spec.requirements.map(r => r.category || "general"))];
     for (const cat of categories) {
       const catReqs = spec.requirements.filter(r => (r.category || "general") === cat);
-      md += `### ${cat.toUpperCase()}\n\n`;
+      md += `### ${formatCategoryName(cat)}\n\n`;
       for (const req of catReqs) {
         const priority = req.priority ? `[${req.priority}]` : "";
         md += `#### ${req.id}: ${req.description} ${priority}\n\n`;
@@ -241,7 +432,7 @@ export function saveSpecMarkdown(cwd: string, spec: Spec): void {
     const categories = [...new Set(spec.design.map(d => d.category || "general"))];
     for (const cat of categories) {
       const catDesign = spec.design.filter(d => (d.category || "general") === cat);
-      md += `### ${cat.toUpperCase()}\n\n`;
+      md += `### ${formatCategoryName(cat)}\n\n`;
       for (const d of catDesign) {
         md += `#### ${d.id}: ${d.component}\n\n`;
         md += `${d.description}\n\n`;
@@ -259,7 +450,7 @@ export function saveSpecMarkdown(cwd: string, spec: Spec): void {
     const categories = [...new Set(spec.tasks.map(t => t.category || "general"))];
     for (const cat of categories) {
       const catTasks = spec.tasks.filter(t => (t.category || "general") === cat);
-      md += `### ${cat.toUpperCase()}\n\n`;
+      md += `### ${formatCategoryName(cat)}\n\n`;
       for (const task of catTasks) {
         const checkbox = task.status === "done" ? "[x]" : "[ ]";
         const statusIcon = task.status === "done" ? "✅" : task.status === "in-progress" ? "🔄" : "⏳";
@@ -273,12 +464,20 @@ export function saveSpecMarkdown(cwd: string, spec: Spec): void {
     }
   }
   
-  const filePath = path.join(cwd, SPEC_DIR, `${spec.id}.md`);
-  fs.writeFileSync(filePath, md);
+  return md;
 }
 
 // Load spec by ID
 export function loadSpec(cwd: string, specId: string): Spec | null {
+  // Try new folder structure first
+  const folderPath = path.join(cwd, SPEC_DIR, specId, "spec.json");
+  if (fs.existsSync(folderPath)) {
+    try {
+      return JSON.parse(fs.readFileSync(folderPath, "utf-8"));
+    } catch {}
+  }
+  
+  // Fallback to old flat structure
   const filePath = path.join(cwd, SPEC_DIR, `${specId}.json`);
   if (!fs.existsSync(filePath)) return null;
   
