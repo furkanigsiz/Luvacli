@@ -689,11 +689,13 @@ ${c.bold}Docs${c.reset} ${c.magenta}(NEW!)${c.reset}
         ask(); return;
       }
       
-      // Natural language spec creation: "bunun için spec oluştur", "spec yap", etc.
+      // Natural language spec creation: "spec oluştur", "bunun için spec hazırla", etc.
+      // More flexible patterns that match "spec" anywhere in the message
       const specCreatePatterns = [
-        /^(bunun için |bununla ilgili |bu konuda )?(spec|spek) (oluştur|yap|hazırla|başlat)/i,
-        /^(spec|spek) (oluştur|yap|hazırla)/i,
-        /^(create|make|start) spec/i
+        /\b(spec|spek)\s+(oluştur|yap|hazırla|başlat|kur)/i,
+        /\b(oluştur|yap|hazırla)\s+(bir\s+)?(spec|spek)/i,
+        /(create|make|start|build)\s+(a\s+)?spec/i,
+        /için\s+(spec|spek)\s+(oluştur|yap|hazırla)/i
       ];
       const isSpecCreateRequest = specCreatePatterns.some(p => p.test(msg));
       
@@ -710,11 +712,16 @@ ${c.bold}Docs${c.reset} ${c.magenta}(NEW!)${c.reset}
           })
           .join("\n");
         
+        // Include current message context too (e.g., "bu modülü inşa etmek için spec hazırla")
+        const currentContext = msg.replace(/\b(spec|spek)\s+(oluştur|yap|hazırla|başlat|kur)/gi, "").trim();
+        
         // Ask AI to extract spec title and description from conversation
         const extractPrompt = `Aşağıdaki konuşmadan bir proje spec'i oluşturmam gerekiyor.
 
 KONUŞMA:
 ${conversationSummary}
+
+${currentContext ? `EK BAĞLAM: ${currentContext}` : ""}
 
 Bu konuşmadan:
 1. Projenin kısa bir başlığı (max 50 karakter)
@@ -726,11 +733,15 @@ JSON formatında döndür:
   "description": "Detaylı açıklama..."
 }
 
-Sadece JSON döndür.`;
+Sadece JSON döndür, başka bir şey yazma.`;
 
         try {
-          const extractSession = model.startChat({ history: [] });
-          const extractResult = await extractSession.sendMessage(extractPrompt);
+          // Use a fresh model without tools to avoid tool calls
+          const extractModel = genAI.getGenerativeModel({
+            model: MODEL,
+            generationConfig: { responseMimeType: "application/json" }
+          });
+          const extractResult = await extractModel.generateContent(extractPrompt);
           const extractText = extractResult.response.text();
           
           const jsonMatch = extractText.match(/\{[\s\S]*\}/);
@@ -741,7 +752,7 @@ Sadece JSON döndür.`;
             
             console.log(`\n✅ Spec oluşturuldu: ${spec.title}`);
             console.log(`📁 .luva/specs/${spec.id}.md`);
-            console.log(`\n📝 Açıklama: ${description.slice(0, 200)}...`);
+            console.log(`\n📝 Açıklama: ${description.slice(0, 200)}${description.length > 200 ? "..." : ""}`);
             console.log(`\n💡 Sonraki adımlar:`);
             console.log(`   /spec req     - Requirements oluştur`);
             console.log(`   /spec design  - Design oluştur`);
