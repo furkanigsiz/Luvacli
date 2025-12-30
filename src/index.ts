@@ -1039,7 +1039,7 @@ ${c.bold}Örnekler${c.reset}
           try {
             const smartCtx = await getSmartContext(genAI, finalMessage, {
               mentionedFiles,
-              maxTokens: 30000
+              maxTokens: 8000  // Agresif limit - maliyet kontrolü
             });
             if (smartCtx.sources.length > 0) {
               console.log(`\x1b[2m🧠 Smart context: ${smartCtx.stats}\x1b[0m`);
@@ -1118,8 +1118,8 @@ async function chat(model: any, history: Content[], userMsg: string, originalMsg
     process.stdout.write("\x1b[36m◆\x1b[0m ");
   }
 
-  // Optimize history to reduce token usage (keep last 50K tokens)
-  const optimizedHistory = optimizeHistory(history.slice(0, -1), 50000);
+  // Optimize history to reduce token usage (aggressive limit)
+  const optimizedHistory = optimizeHistory(history.slice(0, -1), 10000);
   
   // Prepare history with dummy signatures for Gemini 3 compatibility
   const preparedHistory = prepareHistoryForGemini3(optimizedHistory);

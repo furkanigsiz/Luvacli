@@ -10,14 +10,14 @@
 
 import { Content } from "@google/generative-ai";
 
-// Token budget configuration
+// Token budget configuration - AGGRESSIVE LIMITS
 export const TOKEN_BUDGET = {
-  total: 100000,           // Gemini 2.5 Pro context window
-  systemPrompt: 5000,      // System prompt + steering
-  history: 30000,          // Conversation history
-  activeFiles: 20000,      // Currently open/mentioned files
-  relatedFiles: 30000,     // Semantic search results
-  dependencies: 15000,     // Import chain files
+  total: 30000,            // Agresif limit - maliyet kontrolü
+  systemPrompt: 2000,      // System prompt + steering
+  history: 10000,          // Conversation history - çok daha az
+  activeFiles: 8000,       // Currently open/mentioned files
+  relatedFiles: 8000,      // Semantic search results
+  dependencies: 2000,      // Import chain files
 };
 
 // Approximate token count (rough estimate: 4 chars = 1 token)
@@ -71,7 +71,7 @@ export function buildSmartContext(
  */
 export function optimizeHistory(
   history: Content[],
-  maxTokens: number = 50000
+  maxTokens: number = 10000  // Daha agresif limit
 ): Content[] {
   if (history.length === 0) return history;
   
@@ -91,28 +91,45 @@ export function optimizeHistory(
     return history;
   }
   
-  console.log(`⚠️ History çok büyük (${totalTokens} token), optimize ediliyor...`);
+  console.log(`\x1b[33m⚠️ History çok büyük (${Math.round(totalTokens/1000)}K token), optimize ediliyor...\x1b[0m`);
   
-  // Strategy 1: Keep last N messages that fit
+  // Strategy: Keep only last N messages that fit
   const optimized: Content[] = [];
   let usedTokens = 0;
   
-  // Always keep first message (usually important context)
-  if (history.length > 0) {
-    optimized.push(history[0]);
-    usedTokens += tokenCounts[0];
-  }
-  
-  // Add messages from end until budget is reached
-  for (let i = history.length - 1; i > 0; i--) {
+  // Add messages from end until budget is reached (most recent first)
+  for (let i = history.length - 1; i >= 0; i--) {
     if (usedTokens + tokenCounts[i] > maxTokens) {
       break;
     }
-    optimized.splice(1, 0, history[i]); // Insert after first message
+    optimized.unshift(history[i]);
     usedTokens += tokenCounts[i];
   }
   
-  console.log(`✅ History optimize edildi: ${history.length} → ${optimized.length} mesaj (${usedTokens} token)`);
+  // Ensure we have at least the last 2 messages
+  if (optimized.length < 2 && history.length >= 2) {
+    optimized.length = 0;
+    usedTokens = 0;
+    // Force add last 2 messages, truncate if needed
+    for (let i = Math.max(0, history.length - 2); i < history.length; i++) {
+      const msg = history[i];
+      const text = getTextFromParts(msg.parts || []);
+      if (text.length > 5000) {
+        // Truncate long messages
+        const truncatedParts = msg.parts?.map((p: any) => {
+          if (p.text && p.text.length > 5000) {
+            return { text: p.text.slice(0, 5000) + "\n...[truncated]" };
+          }
+          return p;
+        });
+        optimized.push({ ...msg, parts: truncatedParts });
+      } else {
+        optimized.push(msg);
+      }
+    }
+  }
+  
+  console.log(`\x1b[32m✅ History: ${history.length} → ${optimized.length} mesaj (${Math.round(usedTokens/1000)}K token)\x1b[0m`);
   
   return optimized;
 }
